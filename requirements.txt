@@ -1,0 +1,6 @@
+fastapi #Build REST endpoints quickly
+uvicorn #ASGI server to run FastAPI apps
+streamlit #UI framework for data apps
+pandas #Data handling (CSV/Excel/table transforms)
+requests #HTTP client for calling APIs or external services
+openpyxl #Working with Excel files in data workflows
