@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import random
-
+from numpy.random import default_rng as rng
 # CONFIGURACIÓN DE LA PÁGINA
 st.set_page_config(page_title="Simulador BI", layout="wide")
 st.title("Simulador de Demanda de Heladería")
@@ -39,3 +39,14 @@ datos_ficticios = pd.DataFrame({
 # Gráfica de barras y tabla
 st.bar_chart(datos_ficticios.set_index('Sabor'))
 st.dataframe(datos_ficticios, use_container_width=True)
+
+df = pd.DataFrame(
+    {
+        "col1": rng(0).standard_normal(1000) / 50 + 37.76,
+        "col2": rng(1).standard_normal(1000) / 50 + -122.4,
+        "col3": rng(2).standard_normal(1000) * 100,
+        "col4": rng(3).standard_normal((1000, 4)).tolist(),
+    }
+)
+
+st.map(df, latitude="col1", longitude="col2", size="col3", color="col4")
