@@ -1,0 +1,17 @@
+services:
+  db:
+    image: mysql:8.0
+    restart: always
+    environment:
+      # Configuración de accesos
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: db_hackaton
+      MYSQL_USER: user_hackaton
+      MYSQL_PASSWORD: user_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+
+volumes:
+  db_data:
