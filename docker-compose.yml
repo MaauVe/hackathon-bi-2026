@@ -3,11 +3,11 @@ services:
     image: mysql:8.0
     restart: always
     environment:
-      # Configuración de accesos
-      MYSQL_ROOT_PASSWORD: root_password
-      MYSQL_DATABASE: db_hackaton
-      MYSQL_USER: user_hackaton
-      MYSQL_PASSWORD: user_password
+      # Docker Compose mapea las variables del .env aquí
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
     ports:
       - "3306:3306"
     volumes:
