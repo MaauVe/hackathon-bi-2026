@@ -56,11 +56,13 @@ try:
 
     with row1_col1:
         st.subheader("📈 Tendencia de Recaudación Mensual")
-        df_trend = df_consumo.set_index('Fpago').resample('ME')['TOTAL'].sum().reset_index()
+        # Filtrar datos desde 2013
+        df_consumo_filtered = df_consumo[df_consumo['Fpago'] >= '2013-01-01']
+        df_trend = df_consumo_filtered.set_index('Fpago').resample('ME')['TOTAL'].sum().reset_index()
         df_trend['Fpago'] = df_trend['Fpago'].dt.strftime('%Y-%m')
         fig_trend = px.line(df_trend, x='Fpago', y='TOTAL', 
                              labels={'TOTAL': 'Monto ($)', 'Fpago': 'Mes'},
-                             title="Ingresos por Cobranza de Agua")
+                             title="Ingresos por Cobranza de Agua (Desde 2013)")
         st.plotly_chart(fig_trend, use_container_width=True)
 
     with row1_col2:
