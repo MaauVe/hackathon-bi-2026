@@ -3,9 +3,9 @@ import pandas as pd
 import plotly.express as px
 
 # Configuración de la página
-st.set_page_config(page_title="Dashboard de Gestión de Agua - BI", layout="wide")
+st.set_page_config(page_title="Dashboard Hackathon UPAEP", layout="wide")
 
-st.title("📊 Inteligencia de Negocios: Gestión de Agua Potable")
+st.markdown("<h1 style='color: orange;'>Inteligencia de Negocios: Gestión de Agua Potable</h1>", unsafe_allow_html=True)
 st.markdown("### Análisis basado en registros de consumo, viviendas y lotes")
 
 # 1. Carga de datos
@@ -52,14 +52,14 @@ try:
     st.divider()
 
     # --- PESTAÑAS INTERACTIVAS ---
-    tab1, tab2 = st.tabs(["📊 Vista General", "📅 Desglose por Periodo"])
+    tab1, tab2 = st.tabs(["Vista General", "Desglose por Periodo"])
 
     with tab1:
         # --- VISUALIZACIONES EXISTENTES ---
         row1_col1, row1_col2 = st.columns(2)
 
         with row1_col1:
-            st.subheader("📈 Tendencia de Recaudación Mensual")
+            st.subheader("Tendencia de Recaudación Mensual")
             # Filtrar datos desde 2013
             df_consumo_filtered = df_consumo[df_consumo['Fpago'] >= '2013-01-01']
             df_trend = df_consumo_filtered.set_index('Fpago').resample('ME')['TOTAL'].sum().reset_index()
@@ -70,7 +70,7 @@ try:
             st.plotly_chart(fig_trend, use_container_width=True)
 
         with row1_col2:
-            st.subheader("🏘️ Deuda por Fraccionamiento")
+            st.subheader("Deuda por Fraccionamiento")
             df_deuda_fracc = df_viviendas.groupby('fraccionamiento_id')['saldo_deudor'].sum().reset_index()
             df_deuda_fracc = df_deuda_fracc.merge(df_fracc, left_on='fraccionamiento_id', right_on='Id_fraccionamiento')
             fig_deuda = px.bar(df_deuda_fracc.sort_values('saldo_deudor', ascending=False).head(10), 
@@ -82,13 +82,13 @@ try:
         row2_col1, row2_col2 = st.columns(2)
 
         with row2_col1:
-            st.subheader("💧 Distribución de Consumo por Tipo")
+            st.subheader("Distribución de Consumo por Tipo")
             df_tipo = df_consumo.groupby('descripcion')['TOTAL'].sum().reset_index()
             fig_tipo = px.pie(df_tipo, values='TOTAL', names='descripcion', title="Composición de Ingresos")
             st.plotly_chart(fig_tipo, use_container_width=True)
 
         with row2_col2:
-            st.subheader("📍 Recaudación por Fraccionamiento")
+            st.subheader("Recaudación por Fraccionamiento")
             df_cons_lotes = df_consumo.merge(df_lotes[['id_lote', 'Fraccionamiento']], left_on='lote', right_on='id_lote')
             df_cons_agrupado = df_cons_lotes.groupby('Fraccionamiento')['TOTAL'].sum().reset_index()
             df_cons_final = df_cons_agrupado.merge(df_fracc, left_on='Fraccionamiento', right_on='Id_fraccionamiento')
@@ -102,7 +102,7 @@ try:
             st.plotly_chart(fig_cons, use_container_width=True)
 
     with tab2:
-        st.subheader("🔍 Análisis Detallado por Periodo")
+        st.subheader("Análisis Detallado por Periodo")
         
         # Filtros de periodo
         df_consumo['Año'] = df_consumo['Fpago'].dt.year
