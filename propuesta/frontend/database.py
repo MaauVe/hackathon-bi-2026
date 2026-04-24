@@ -22,10 +22,10 @@ def get_engine():
         _engine = create_engine(conn_str, pool_size=10, max_overflow=20)
     return _engine
 
-def run_query(query):
+def run_query(query, params=None):
     engine = get_engine()
     with engine.connect() as conn:
-        return pd.read_sql(query, conn)
+        return pd.read_sql(query, conn, params=params)
 
 def execute_statement(statement, params=None):
     engine = get_engine()
