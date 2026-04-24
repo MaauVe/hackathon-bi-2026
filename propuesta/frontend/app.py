@@ -5,147 +5,233 @@ from database import run_query, execute_statement
 from sqlalchemy import text
 from datetime import datetime
 
-st.set_page_config(page_title="Sistema de Gestión de Agua Potable - BI", layout="wide")
+# Configuración de la página
+st.set_page_config(page_title="H2O Management - BI & Control", layout="wide", initial_sidebar_state="expanded")
 
-st.sidebar.title("Navegación")
-page = st.sidebar.radio("Ir a:", ["Dashboard BI", "Registrar Consumo", "Registrar Transacción", "Catálogos"])
+# Estilo personalizado para las métricas y botones
+st.markdown("""
+    <style>
+    .stMetric {
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid rgba(128, 128, 128, 0.1);
+    }
+    .stTabs [data-baseweb="tab-list"] { gap: 24px; }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        border-radius: 4px 4px 0px 0px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-if page == "Dashboard BI":
+# --- Funciones de Utilidad ---
+@st.cache_data(ttl=5)
+def get_catalogo(tabla):
+    return run_query(f"SELECT * FROM {tabla}")
+
+# --- BARRA LATERAL (Navegación Principal) ---
+st.sidebar.title("💧 H2O Management")
+menu = st.sidebar.radio("Ir a:", [
+    "📊 Dashboard BI", 
+    "💸 Operaciones Financieras", 
+    "🚰 Control de Consumo", 
+    "⚙️ Gestión de Catálogos (CRUD)"
+])
+
+# --- Lógica de Páginas ---
+
+if menu == "📊 Dashboard BI":
     st.title("📊 Dashboard de Inteligencia de Negocios")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    # KPIs Reales
-    total_ingresos = run_query("SELECT SUM(monto) FROM Transacciones WHERE tipo_movimiento='ingreso'").iloc[0,0] or 0
-    total_egresos = run_query("SELECT SUM(monto) FROM Transacciones WHERE tipo_movimiento='egreso'").iloc[0,0] or 0
-    total_consumo = run_query("SELECT SUM(total) FROM Consumo").iloc[0,0] or 0
-    
-    col1.metric("Total Ingresos", f"${total_ingresos:,.2f}")
-    col2.metric("Total Egresos", f"${total_egresos:,.2f}")
-    col3.metric("Total Facturado (Consumo)", f"${total_consumo:,.2f}")
-    
+    st.markdown("### Análisis basado en registros reales de la base de datos")
+
+    # KPIs Superiores (Estilo ui/app.py)
+    col1, col2, col3, col4 = st.columns(4)
+    total_recaudado = run_query("SELECT SUM(total) FROM Consumo").iloc[0,0] or 0
+    total_deuda = run_query("SELECT SUM(saldo) FROM Vivienda").iloc[0,0] or 0
+    num_mora = run_query("SELECT COUNT(*) FROM Vivienda WHERE saldo > 0").iloc[0,0] or 0
+    eficiencia = (total_recaudado / (total_recaudado + total_deuda)) * 100 if (total_recaudado + total_deuda) > 0 else 0
+
+    col1.metric("Recaudación Histórica", f"${total_recaudado:,.2f}")
+    col2.metric("Deuda Pendiente", f"${total_deuda:,.2f}", delta=f"-{total_deuda:,.2f}", delta_color="inverse")
+    col3.metric("Eficiencia de Cobranza", f"{eficiencia:.2f}%")
+    col4.metric("Viviendas en Mora", num_mora)
+
     st.divider()
-    
-    # 1. Gráfico de Ingresos vs Egresos por Tiempo
-    st.subheader("📈 Evolución Financiera")
-    df_finanzas = run_query("""
-        SELECT DATE_FORMAT(fecha, '%Y-%m') as mes, tipo_movimiento, SUM(monto) as total 
-        FROM Transacciones 
-        GROUP BY mes, tipo_movimiento 
-        ORDER BY mes
-    """)
-    if not df_finanzas.empty:
-        fig_fin = px.line(df_finanzas, x="mes", y="total", color="tipo_movimiento", 
-                         title="Ingresos vs Egresos Mensuales", markers=True)
-        st.plotly_chart(fig_fin, use_container_width=True)
-    
-    # 2. Distribución por Fraccionamiento
-    st.subheader("🏘️ Situación por Fraccionamiento")
-    df_frac = run_query("""
-        SELECT f.Nombre, SUM(v.saldo) as deuda_total, COUNT(v.ID) as num_viviendas
-        FROM Fraccionamiento f
-        JOIN Lote l ON f.ID = l.id_fraccionamiento
-        JOIN Vivienda v ON l.ID = v.id_lote
-        GROUP BY f.Nombre
-    """)
-    if not df_frac.empty:
-        fig_frac = px.bar(df_frac, x="Nombre", y="deuda_total", color="num_viviendas",
-                         title="Adeudos Totales por Fraccionamiento",
-                         labels={"Nombre": "Fraccionamiento", "deuda_total": "Saldo Pendiente ($)"})
-        st.plotly_chart(fig_frac, use_container_width=True)
 
-    # 3. Consumo por Tipo de Servicio
-    st.subheader("💧 Consumo por Tipo de Servicio")
-    df_cons = run_query("""
-        SELECT ts.TipoServicio, SUM(c.total) as total_ventas, SUM(c.Cantidad) as vol_total
-        FROM Consumo c
-        JOIN TipoServicio ts ON c.id_tipo_de_servicio = ts.ID
-        GROUP BY ts.TipoServicio
-    """)
-    if not df_cons.empty:
-        fig_cons = px.pie(df_cons, values="total_ventas", names="TipoServicio", title="Distribución de Ingresos por Tipo de Servicio")
-        st.plotly_chart(fig_cons, use_container_width=True)
+    tab1, tab2 = st.tabs(["📊 Vista General", "📅 Desglose por Periodo"])
 
-elif page == "Registrar Consumo":
-    st.title("🚰 Registro de Consumo de Agua")
-    
-    with st.form("form_consumo"):
-        viviendas = run_query("SELECT ID, Clave FROM Vivienda")
-        v_options = {row['Clave']: row['ID'] for _, row in viviendas.iterrows()}
-        vivienda_sel = st.selectbox("Vivienda", options=list(v_options.keys()))
-        
-        periodos = run_query("SELECT ID, Anio, semana FROM Periodo ORDER BY Anio DESC, semana DESC")
-        p_options = {f"{row['Anio']} - Sem {row['semana']}": row['ID'] for _, row in periodos.iterrows()}
-        periodo_sel = st.selectbox("Periodo", options=list(p_options.keys()))
-        
-        servicios = run_query("SELECT ID, TipoServicio FROM TipoServicio")
-        s_options = {row['TipoServicio']: row['ID'] for _, row in servicios.iterrows()}
-        servicio_sel = st.selectbox("Tipo de Servicio", options=list(s_options.keys()))
-        
-        cantidad = st.number_input("Cantidad", min_value=0.0, step=0.1)
-        total = st.number_input("Monto Total ($)", min_value=0.0, step=0.1)
-        orden = st.text_input("ID Orden de Compra", value=f"OC-{datetime.now().strftime('%M%S')}")
-        
-        submitted = st.form_submit_button("Registrar Consumo")
-        if submitted:
-            execute_statement(text("""
-                INSERT INTO Consumo (IDordenCompra, Cantidad, total, id_tipo_de_servicio, id_vivienda, id_periodo)
-                VALUES (:oc, :can, :tot, :ts, :v, :p)
-            """), {
-                "oc": orden, "can": cantidad, "tot": total, 
-                "ts": s_options[servicio_sel], "v": v_options[vivienda_sel], "p": p_options[periodo_sel]
-            })
-            st.success("Consumo registrado correctamente.")
+    with tab1:
+        r1_c1, r1_c2 = st.columns(2)
+        with r1_c1:
+            st.subheader("📈 Tendencia de Recaudación")
+            df_trend = run_query("""
+                SELECT DATE_FORMAT(fecha_inicio, '%Y-%m') as mes, SUM(c.total) as total
+                FROM Consumo c JOIN Periodo p ON c.id_periodo = p.ID
+                GROUP BY mes ORDER BY mes
+            """)
+            if not df_trend.empty:
+                st.plotly_chart(px.line(df_trend, x='mes', y='total', title="Ingresos Mensuales"), use_container_width=True)
 
-elif page == "Registrar Transacción":
-    st.title("💸 Registro de Transacción (Ingreso/Egreso)")
-    
-    with st.form("form_transaccion"):
-        tipo = st.selectbox("Tipo de Movimiento", ["ingreso", "egreso"])
-        monto = st.number_input("Monto ($)", min_value=0.0, step=0.1)
-        
-        conceptos = run_query("SELECT ID, concepto FROM Conceptos")
-        c_options = {row['concepto']: row['ID'] for _, row in conceptos.iterrows()}
-        concepto_sel = st.selectbox("Concepto", options=list(c_options.keys()))
-        
-        ccostos = run_query("SELECT ID, descripcion FROM CCostos")
-        cc_options = {row['descripcion']: row['ID'] for _, row in ccostos.iterrows()}
-        ccosto_sel = st.selectbox("Centro de Costos", options=list(cc_options.keys()))
-        
-        fecha = st.date_input("Fecha", datetime.now())
-        
-        submitted = st.form_submit_button("Guardar Transacción")
-        if submitted:
-            execute_statement(text("""
-                INSERT INTO Transacciones (fecha, monto, tipo_movimiento, id_ccostos, id_concepto)
-                VALUES (:f, :m, :tm, :cc, :c)
-            """), {
-                "f": fecha, "m": monto, "tm": tipo, 
-                "cc": cc_options[ccosto_sel], "c": c_options[concepto_sel]
-            })
-            st.success("Transacción guardada correctamente.")
+        with r1_c2:
+            st.subheader("🏘️ Deuda por Fraccionamiento")
+            df_deuda = run_query("""
+                SELECT f.Nombre as Fracc, SUM(v.saldo) as deuda
+                FROM Vivienda v JOIN Lote l ON v.id_lote = l.ID JOIN Fraccionamiento f ON l.id_fraccionamiento = f.ID
+                GROUP BY Fracc ORDER BY deuda DESC LIMIT 10
+            """)
+            if not df_deuda.empty:
+                st.plotly_chart(px.bar(df_deuda, x='Fracc', y='deuda', color='deuda', color_continuous_scale='Reds'), use_container_width=True)
 
-elif page == "Catálogos":
-    st.title("📂 Administración de Catálogos")
-    cat = st.tabs(["Fraccionamientos", "Viviendas", "Usuarios"])
-    
-    with cat[0]:
-        st.subheader("Lista de Fraccionamientos")
-        df = run_query("SELECT * FROM Fraccionamiento")
-        st.dataframe(df, use_container_width=True)
+        r2_c1, r2_c2 = st.columns(2)
+        with r2_c1:
+            st.subheader("💧 Distribución de Consumo")
+            df_tipo = run_query("""
+                SELECT ts.TipoServicio, SUM(c.total) as total FROM Consumo c
+                JOIN TipoServicio ts ON c.id_tipo_de_servicio = ts.ID GROUP BY ts.TipoServicio
+            """)
+            if not df_tipo.empty:
+                st.plotly_chart(px.pie(df_tipo, values='total', names='TipoServicio'), use_container_width=True)
+
+        with r2_c2:
+            st.subheader("📍 Recaudación por Fraccionamiento")
+            df_rec = run_query("""
+                SELECT f.Nombre as Fracc, SUM(c.total) as total
+                FROM Consumo c JOIN Vivienda v ON c.id_vivienda = v.ID 
+                JOIN Lote l ON v.id_lote = l.ID JOIN Fraccionamiento f ON l.id_fraccionamiento = f.ID
+                GROUP BY Fracc ORDER BY total DESC LIMIT 10
+            """)
+            if not df_rec.empty:
+                st.plotly_chart(px.bar(df_rec, x='Fracc', y='total', color='total', color_continuous_scale='Viridis'), use_container_width=True)
+
+    with tab2:
+        years = run_query("SELECT DISTINCT Anio FROM Periodo ORDER BY Anio DESC")['Anio'].tolist()
+        col_y, col_s = st.columns(2)
+        sel_y = col_y.selectbox("Año", years)
+        weeks = run_query(f"SELECT DISTINCT semana FROM Periodo WHERE Anio={sel_y} ORDER BY semana")['semana'].tolist()
+        sel_w = col_s.selectbox("Semana", weeks)
         
-    with cat[1]:
-        st.subheader("Lista de Viviendas")
-        df = run_query("""
-            SELECT v.ID, v.Clave, f.Nombre as Fraccionamiento, u.Nombre as Propietario, v.saldo
-            FROM Vivienda v
-            JOIN Lote l ON v.id_lote = l.ID
-            JOIN Fraccionamiento f ON l.id_fraccionamiento = f.ID
-            JOIN Usuario u ON v.id_user = u.ID
+        df_p = run_query(f"""
+            SELECT ts.TipoServicio, SUM(c.total) as total, COUNT(*) as registros
+            FROM Consumo c JOIN Periodo p ON c.id_periodo = p.ID JOIN TipoServicio ts ON c.id_tipo_de_servicio = ts.ID
+            WHERE p.Anio = {sel_y} AND p.semana = {sel_w} GROUP BY ts.TipoServicio
         """)
-        st.dataframe(df, use_container_width=True)
-        
-    with cat[2]:
-        st.subheader("Usuarios Registrados")
-        df = run_query("SELECT * FROM Usuario")
-        st.dataframe(df, use_container_width=True)
+        if not df_p.empty:
+            st.info(f"**Resumen Semana {sel_w}, {sel_y}** | Total: ${df_p['total'].sum():,.2f}")
+            st.dataframe(df_p, use_container_width=True, hide_index=True)
+            st.plotly_chart(px.bar(df_p, x='TipoServicio', y='total', color='total'), use_container_width=True)
+
+elif menu == "💸 Operaciones Financieras":
+    st.title("💸 Operaciones Financieras")
+    t1, t2 = st.tabs(["➕ Nueva Transacción", "📜 Historial"])
+    with t1:
+        with st.form("f_fin"):
+            c1, c2 = st.columns(2)
+            with c1:
+                tipo = st.selectbox("Tipo", ["ingreso", "egreso"])
+                monto = st.number_input("Monto", min_value=0.0)
+            with c2:
+                cc = {r['descripcion']: r['ID'] for _, r in get_catalogo("CCostos").iterrows()}
+                cc_sel = st.selectbox("CCosto", list(cc.keys()))
+                con = {r['concepto']: r['ID'] for _, r in get_catalogo("Conceptos").iterrows()}
+                con_sel = st.selectbox("Concepto", list(con.keys()))
+            if st.form_submit_button("Guardar"):
+                execute_statement(text("INSERT INTO Transacciones (fecha, monto, tipo_movimiento, id_ccostos, id_concepto) VALUES (NOW(), :m, :t, :cc, :c)"),
+                                 {"m": monto, "t": tipo, "cc": cc[cc_sel], "c": con[con_sel]})
+                st.success("Registrado")
+    with t2:
+        st.dataframe(run_query("SELECT t.ID, t.fecha, t.monto, t.tipo_movimiento, cc.descripcion as CC, c.concepto FROM Transacciones t JOIN CCostos cc ON t.id_ccostos = cc.ID JOIN Conceptos c ON t.id_concepto = c.ID ORDER BY t.fecha DESC"), use_container_width=True)
+
+elif menu == "🚰 Control de Consumo":
+    st.title("🚰 Registro de Consumo")
+    with st.form("f_cons"):
+        c1, c2 = st.columns(2)
+        with c1:
+            viv = {f"{r['Nombre']} - {r['Clave']}": r['ID'] for _, r in run_query("SELECT v.ID, v.Clave, f.Nombre FROM Vivienda v JOIN Lote l ON v.id_lote = l.ID JOIN Fraccionamiento f ON l.id_fraccionamiento = f.ID").iterrows()}
+            v_sel = st.selectbox("Vivienda", list(viv.keys()))
+            per = {f"{r['Anio']} - S{r['semana']}": r['ID'] for _, r in get_catalogo("Periodo").iterrows()}
+            p_sel = st.selectbox("Periodo", list(per.keys()))
+        with c2:
+            ts = {r['TipoServicio']: r['ID'] for _, r in get_catalogo("TipoServicio").iterrows()}
+            ts_sel = st.selectbox("Servicio", list(ts.keys()))
+            cant = st.number_input("Cantidad", min_value=0.0)
+            tot = st.number_input("Total", min_value=0.0)
+        if st.form_submit_button("Registrar Consumo"):
+            execute_statement(text("INSERT INTO Consumo (IDordenCompra, Cantidad, total, id_tipo_de_servicio, id_vivienda, id_periodo) VALUES (:oc, :can, :tot, :ts, :v, :p)"),
+                             {"oc": f"OC-{datetime.now().strftime('%M%S')}", "can": cant, "tot": tot, "ts": ts[ts_sel], "v": viv[v_sel], "p": per[p_sel]})
+            st.success("Consumo guardado")
+
+elif menu == "⚙️ Gestión de Catálogos (CRUD)":
+    st.title("⚙️ Administración de Datos Maestro")
+    cat = st.tabs(["Lotes", "Viviendas", "Usuarios", "Fraccionamientos", "Conceptos/Costos"])
+    
+    with cat[0]: # LOTES
+        c1, c2 = st.columns([2, 1])
+        with c2:
+            with st.expander("➕ Nuevo Lote", expanded=True):
+                f_map = {r['Nombre']: r['ID'] for _, r in get_catalogo("Fraccionamiento").iterrows()}
+                f_sel = st.selectbox("Fraccionamiento", list(f_map.keys()))
+                tl_map = {r['TipoLote']: r['ID'] for _, r in get_catalogo("TipoLote").iterrows()}
+                tl_sel = st.selectbox("Tipo de Lote", list(tl_map.keys()))
+                c, m = st.text_input("Clave"), st.text_input("Manzana")
+                if st.button("Guardar Lote"):
+                    execute_statement(text("INSERT INTO Lote (id_fraccionamiento, id_tipo, Clave, manzana) VALUES (:f, :t, :c, :m)"), {"f": f_map[f_sel], "t": tl_map[tl_sel], "c": c, "m": m})
+                    st.rerun()
+        with c1:
+            st.dataframe(run_query("SELECT l.ID, f.Nombre as Fracc, tl.TipoLote as Tipo, l.Clave, l.manzana FROM Lote l JOIN Fraccionamiento f ON l.id_fraccionamiento = f.ID JOIN TipoLote tl ON l.id_tipo = tl.ID"), use_container_width=True)
+
+    with cat[1]: # VIVIENDAS
+        c1, c2 = st.columns([2, 1])
+        with c2:
+            with st.expander("➕ Nueva Vivienda", expanded=True):
+                l_map = {f"{r['Nombre']} - {r['Clave']}": r['ID'] for _, r in run_query("SELECT l.ID, l.Clave, f.Nombre FROM Lote l JOIN Fraccionamiento f ON l.id_fraccionamiento = f.ID").iterrows()}
+                l_sel = st.selectbox("Lote", list(l_map.keys()))
+                u_map = {r['Nombre']: r['ID'] for _, r in get_catalogo("Usuario").iterrows()}
+                u_sel = st.selectbox("Propietario", list(u_map.keys()))
+                vc, vs = st.text_input("Clave Vivienda"), st.number_input("Saldo Inicial")
+                if st.button("Guardar Vivienda"):
+                    execute_statement(text("INSERT INTO Vivienda (id_lote, id_user, Clave, saldo) VALUES (:l, :u, :c, :s)"), {"l": l_map[l_sel], "u": u_map[u_sel], "c": vc, "s": vs})
+                    st.rerun()
+        with c1:
+            st.dataframe(run_query("SELECT v.ID, v.Clave, f.Nombre as Fracc, u.Nombre as Dueño, v.saldo FROM Vivienda v JOIN Lote l ON v.id_lote = l.ID JOIN Fraccionamiento f ON l.id_fraccionamiento = f.ID JOIN Usuario u ON v.id_user = u.ID"), use_container_width=True)
+
+    with cat[2]: # USUARIOS
+        c1, c2 = st.columns([2, 1])
+        with c2:
+            with st.expander("➕ Nuevo Usuario", expanded=True):
+                n, t, e = st.text_input("Nombre"), st.text_input("Tel"), st.text_input("Email")
+                if st.button("Guardar Usuario"):
+                    execute_statement(text("INSERT INTO Usuario (Nombre, Telefono, Email) VALUES (:n, :t, :e)"), {"n": n, "t": t, "e": e})
+                    st.rerun()
+        with c1: st.dataframe(get_catalogo("Usuario"), use_container_width=True)
+
+    with cat[3]: # FRACC
+        c1, c2 = st.columns([2, 1])
+        with c2:
+            with st.expander("➕ Nuevo Fraccionamiento", expanded=True):
+                c, n, l = st.text_input("Clave F"), st.text_input("Nombre F"), st.number_input("Lotes F", min_value=0)
+                if st.button("Guardar Fracc"):
+                    execute_statement(text("INSERT INTO Fraccionamiento (Clave, Nombre, No_lotes) VALUES (:c, :n, :l)"), {"c": c, "n": n, "l": l})
+                    st.rerun()
+        with c1: st.dataframe(get_catalogo("Fraccionamiento"), use_container_width=True)
+
+    with cat[4]: # CONCEPTOS
+        cl, cr = st.columns(2)
+        with cl:
+            st.subheader("Conceptos")
+            with st.expander("➕"):
+                cn, cs = st.text_input("Concepto"), st.selectbox("Clasificación", ["BANCOS", "CANCELADO", "INTERCOMPAÑIAS"])
+                if st.button("Ok Concepto"):
+                    execute_statement(text("INSERT INTO Conceptos (concepto, clasificacion) VALUES (:n, :s)"), {"n": cn, "s": cs})
+                    st.rerun()
+            st.dataframe(get_catalogo("Conceptos"), use_container_width=True)
+        with cr:
+            st.subheader("CCostos")
+            with st.expander("➕"):
+                cd = st.text_input("Descripción CC")
+                if st.button("Ok CC"):
+                    execute_statement(text("INSERT INTO CCostos (descripcion) VALUES (:d)"), {"d": cd})
+                    st.rerun()
+            st.dataframe(get_catalogo("CCostos"), use_container_width=True)
